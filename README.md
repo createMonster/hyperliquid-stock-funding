@@ -4,6 +4,8 @@ A small Rust CLI for calculating total and annualized funding rates for Hyperliq
 
 The tool reads Hyperliquid's public `info` API, discovers markets categorized as `stocks`, fetches historical funding rates, and ranks the results by annualized funding.
 
+The CLI retries rate-limited API requests with exponential backoff.
+
 ## Install
 
 ```bash

@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::thread::sleep;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
@@ -65,6 +67,7 @@ fn run_funding(
     for coin in coins {
         let records = fetch_funding_history(client, api_url, &coin, start_time, end_time)?;
         summaries.push(funding_summary(&coin, &records, days as f64));
+        sleep(Duration::from_millis(250));
     }
 
     summaries.sort_by(|a, b| b.annualized_rate.total_cmp(&a.annualized_rate));

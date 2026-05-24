@@ -1,7 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::thread::sleep;
+use std::time::Duration;
 
+use reqwest::StatusCode;
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::json;
 
 pub const DEFAULT_API_URL: &str = "https://api.hyperliquid.xyz/info";
@@ -132,13 +137,9 @@ pub fn sort_snapshots_by_oi_usd(snapshots: &mut [AssetSnapshot]) {
     snapshots.sort_by(|a, b| b.oi_usd().total_cmp(&a.oi_usd()));
 }
 
-pub fn fetch_stock_coins(client: &Client, api_url: &str) -> Result<Vec<String>, reqwest::Error> {
-    let categories: Vec<(String, String)> = client
-        .post(api_url)
-        .json(&json!({ "type": "perpCategories" }))
-        .send()?
-        .error_for_status()?
-        .json()?;
+pub fn fetch_stock_coins(client: &Client, api_url: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let categories: Vec<(String, String)> =
+        post_info(client, api_url, json!({ "type": "perpCategories" }))?;
 
     Ok(stock_coins(categories))
 }
@@ -149,22 +150,21 @@ pub fn fetch_funding_history(
     coin: &str,
     start_time: u64,
     end_time: u64,
-) -> Result<Vec<FundingRecord>, reqwest::Error> {
+) -> Result<Vec<FundingRecord>, Box<dyn Error>> {
     let mut start_time = start_time;
     let mut records = Vec::new();
 
     while start_time <= end_time {
-        let page: Vec<FundingRecord> = client
-            .post(api_url)
-            .json(&json!({
+        let page: Vec<FundingRecord> = post_info(
+            client,
+            api_url,
+            json!({
                 "type": "fundingHistory",
                 "coin": coin,
                 "startTime": start_time,
                 "endTime": end_time
-            }))
-            .send()?
-            .error_for_status()?
-            .json()?;
+            }),
+        )?;
 
         if page.is_empty() {
             break;
@@ -187,7 +187,7 @@ pub fn fetch_asset_snapshots(
     client: &Client,
     api_url: &str,
     coins: &[String],
-) -> Result<Vec<AssetSnapshot>, reqwest::Error> {
+) -> Result<Vec<AssetSnapshot>, Box<dyn Error>> {
     let requested: BTreeSet<&str> = coins.iter().map(String::as_str).collect();
     let mut coins_by_dex: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for coin in coins {
@@ -199,15 +199,14 @@ pub fn fetch_asset_snapshots(
 
     let mut snapshots = Vec::new();
     for (dex, _) in coins_by_dex {
-        let response: MetaAndAssetCtxs = client
-            .post(api_url)
-            .json(&json!({
+        let response: MetaAndAssetCtxs = post_info(
+            client,
+            api_url,
+            json!({
                 "type": "metaAndAssetCtxs",
                 "dex": dex
-            }))
-            .send()?
-            .error_for_status()?
-            .json()?;
+            }),
+        )?;
 
         let MetaAndAssetCtxs(meta, contexts) = response;
         for (asset, context) in meta.universe.into_iter().zip(contexts) {
@@ -230,4 +229,24 @@ pub fn fetch_asset_snapshots(
 
 fn parse_f64(value: &str) -> f64 {
     value.parse().unwrap_or(0.0)
+}
+
+fn post_info<T: DeserializeOwned>(
+    client: &Client,
+    api_url: &str,
+    body: serde_json::Value,
+) -> Result<T, Box<dyn Error>> {
+    let mut delay = Duration::from_millis(500);
+    for attempt in 0..6 {
+        let response = client.post(api_url).json(&body).send()?;
+        if response.status() == StatusCode::TOO_MANY_REQUESTS && attempt < 5 {
+            sleep(delay);
+            delay *= 2;
+            continue;
+        }
+
+        return Ok(response.error_for_status()?.json()?);
+    }
+
+    unreachable!()
 }
