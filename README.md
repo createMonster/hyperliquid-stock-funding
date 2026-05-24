@@ -30,6 +30,18 @@ Check specific markets:
 hl-stock-funding xyz:AAPL km:TSLA flx:NVDA --days 7
 ```
 
+Show current open interest for all stock perps:
+
+```bash
+hl-stock-funding oi
+```
+
+Show current open interest for specific markets:
+
+```bash
+hl-stock-funding oi xyz:AAPL km:TSLA flx:NVDA
+```
+
 Example output:
 
 ```text
