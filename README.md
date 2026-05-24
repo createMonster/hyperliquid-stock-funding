@@ -57,6 +57,18 @@ total funding rate = sum(hourly funding rates in the lookback window)
 annualized rate    = total funding rate * 365 / days
 ```
 
+## Interpretation
+
+High funding is more interesting when it is supported by rising open interest and enough trading volume. A simple working hypothesis:
+
+```text
+high funding + rising OI = trend demand may still be pushing the market
+high funding + falling OI = the move may be a late squeeze or unwind
+high funding + weak volume = the signal is less reliable
+```
+
+The `oi` command shows the current OI snapshot and 24h notional volume. To judge whether OI is rising, compare repeated snapshots over time.
+
 Funding history is fetched from:
 
 ```text
