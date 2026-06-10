@@ -44,6 +44,14 @@ Show current open interest for specific markets:
 hl-stock-funding oi xyz:AAPL km:TSLA flx:NVDA
 ```
 
+Show daily funding received or paid by a wallet:
+
+```bash
+cp .env.example .env
+# set HYPERLIQUID_WALLET in .env
+hl-stock-funding wallet-funding --days 30
+```
+
 Example output:
 
 ```text

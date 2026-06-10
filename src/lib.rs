@@ -3,6 +3,7 @@ use std::error::Error;
 use std::thread::sleep;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -76,6 +77,50 @@ pub struct AssetSnapshot {
     pub premium: Option<f64>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserFundingEvent {
+    pub time: u64,
+    pub delta: UserFundingDelta,
+}
+
+impl UserFundingEvent {
+    pub fn new(
+        time: u64,
+        coin: impl Into<String>,
+        usdc: impl Into<String>,
+        szi: impl Into<String>,
+        funding_rate: impl Into<String>,
+    ) -> Self {
+        Self {
+            time,
+            delta: UserFundingDelta {
+                coin: coin.into(),
+                usdc: usdc.into(),
+                szi: szi.into(),
+                funding_rate: funding_rate.into(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserFundingDelta {
+    pub coin: String,
+    pub usdc: String,
+    pub szi: String,
+    #[serde(rename = "fundingRate")]
+    pub funding_rate: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DailyUserFunding {
+    pub date: String,
+    pub total_usdc: f64,
+    pub received_usdc: f64,
+    pub paid_usdc: f64,
+    pub events: usize,
+}
+
 impl AssetSnapshot {
     pub fn new(
         coin: impl Into<String>,
@@ -135,6 +180,35 @@ pub fn dex_for_coin(coin: &str) -> &str {
 
 pub fn sort_snapshots_by_oi_usd(snapshots: &mut [AssetSnapshot]) {
     snapshots.sort_by(|a, b| b.oi_usd().total_cmp(&a.oi_usd()));
+}
+
+pub fn daily_user_funding(events: &[UserFundingEvent]) -> Vec<DailyUserFunding> {
+    let mut by_date: BTreeMap<String, DailyUserFunding> = BTreeMap::new();
+
+    for event in events {
+        let Some(datetime) = DateTime::<Utc>::from_timestamp_millis(event.time as i64) else {
+            continue;
+        };
+        let date = datetime.format("%Y-%m-%d").to_string();
+        let usdc = parse_f64(&event.delta.usdc);
+        let row = by_date.entry(date.clone()).or_insert(DailyUserFunding {
+            date,
+            total_usdc: 0.0,
+            received_usdc: 0.0,
+            paid_usdc: 0.0,
+            events: 0,
+        });
+
+        row.total_usdc += usdc;
+        if usdc >= 0.0 {
+            row.received_usdc += usdc;
+        } else {
+            row.paid_usdc += usdc;
+        }
+        row.events += 1;
+    }
+
+    by_date.into_values().collect()
 }
 
 pub fn fetch_stock_coins(client: &Client, api_url: &str) -> Result<Vec<String>, Box<dyn Error>> {
@@ -225,6 +299,45 @@ pub fn fetch_asset_snapshots(
 
     sort_snapshots_by_oi_usd(&mut snapshots);
     Ok(snapshots)
+}
+
+pub fn fetch_user_funding(
+    client: &Client,
+    api_url: &str,
+    user: &str,
+    start_time: u64,
+    end_time: u64,
+) -> Result<Vec<UserFundingEvent>, Box<dyn Error>> {
+    let mut start_time = start_time;
+    let mut events = Vec::new();
+
+    while start_time <= end_time {
+        let page: Vec<UserFundingEvent> = post_info(
+            client,
+            api_url,
+            json!({
+                "type": "userFunding",
+                "user": user,
+                "startTime": start_time,
+                "endTime": end_time
+            }),
+        )?;
+
+        if page.is_empty() {
+            break;
+        }
+
+        let next_start = page.last().map(|event| event.time + 1);
+        let is_last_page = page.len() < 500;
+        events.extend(page);
+
+        match (is_last_page, next_start) {
+            (true, _) | (_, None) => break,
+            (false, Some(next_start)) => start_time = next_start,
+        }
+    }
+
+    Ok(events)
 }
 
 fn parse_f64(value: &str) -> f64 {

@@ -4,9 +4,10 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
+use dotenvy::dotenv;
 use hyperliquid_stock_funding::{
-    DEFAULT_API_URL, fetch_asset_snapshots, fetch_funding_history, fetch_stock_coins,
-    funding_summary,
+    DEFAULT_API_URL, daily_user_funding, fetch_asset_snapshots, fetch_funding_history,
+    fetch_stock_coins, fetch_user_funding, funding_summary,
 };
 use reqwest::blocking::Client;
 
@@ -36,14 +37,27 @@ enum Command {
         #[arg(value_name = "COIN")]
         coins: Vec<String>,
     },
+
+    #[command(about = "Show daily funding received or paid by a wallet.")]
+    WalletFunding {
+        #[arg(long)]
+        wallet: Option<String>,
+
+        #[arg(short, long, default_value_t = 7)]
+        days: u64,
+    },
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    dotenv().ok();
     let cli = Cli::parse();
     let client = Client::new();
 
     match cli.command {
         Some(Command::Oi { coins }) => run_oi(&client, &cli.api_url, coins),
+        Some(Command::WalletFunding { wallet, days }) => {
+            run_wallet_funding(&client, &cli.api_url, wallet, days)
+        }
         None => run_funding(&client, &cli.api_url, cli.coins, cli.days),
     }
 }
@@ -110,6 +124,35 @@ fn run_oi(client: &Client, api_url: &str, coins: Vec<String>) -> Result<(), Box<
             snapshot.day_ntl_vlm.unwrap_or(0.0),
             snapshot.funding.unwrap_or(0.0) * 100.0,
             snapshot.premium.unwrap_or(0.0) * 100.0,
+        );
+    }
+
+    Ok(())
+}
+
+fn run_wallet_funding(
+    client: &Client,
+    api_url: &str,
+    wallet: Option<String>,
+    days: u64,
+) -> Result<(), Box<dyn Error>> {
+    let wallet = wallet
+        .or_else(|| std::env::var("HYPERLIQUID_WALLET").ok())
+        .ok_or("missing wallet: pass --wallet or set HYPERLIQUID_WALLET in .env")?;
+
+    let end_time = current_time_ms()?;
+    let start_time = end_time.saturating_sub(days * 24 * 60 * 60 * 1000);
+    let events = fetch_user_funding(client, api_url, &wallet, start_time, end_time)?;
+    let rows = daily_user_funding(&events);
+
+    println!(
+        "{:<12} {:>12} {:>12} {:>12} {:>8}",
+        "date", "total_usdc", "received", "paid", "events"
+    );
+    for row in rows {
+        println!(
+            "{:<12} {:>12.4} {:>12.4} {:>12.4} {:>8}",
+            row.date, row.total_usdc, row.received_usdc, row.paid_usdc, row.events
         );
     }
 

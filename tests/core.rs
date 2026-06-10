@@ -1,6 +1,6 @@
 use hyperliquid_stock_funding::{
-    AssetSnapshot, FundingRecord, annualized_rate, dex_for_coin, funding_summary, next_page_start,
-    sort_snapshots_by_oi_usd, stock_coins,
+    AssetSnapshot, FundingRecord, UserFundingEvent, annualized_rate, daily_user_funding,
+    dex_for_coin, funding_summary, next_page_start, sort_snapshots_by_oi_usd, stock_coins,
 };
 
 #[test]
@@ -79,4 +79,23 @@ fn snapshots_sort_by_notional_open_interest_descending() {
             .collect::<Vec<_>>(),
         vec!["xyz:B", "xyz:A"]
     );
+}
+
+#[test]
+fn daily_user_funding_groups_by_utc_day() {
+    let events = vec![
+        UserFundingEvent::new(1_700_000_000_000, "xyz:DRAM", "1.25", "-10", "0.0001"),
+        UserFundingEvent::new(1_700_000_001_000, "xyz:MRVL", "-0.50", "2", "0.0002"),
+        UserFundingEvent::new(1_700_086_400_000, "xyz:DRAM", "2.00", "-10", "0.0003"),
+    ];
+
+    let rows = daily_user_funding(&events);
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].date, "2023-11-14");
+    assert_eq!(rows[0].events, 2);
+    assert!((rows[0].total_usdc - 0.75).abs() < 1e-12);
+    assert!((rows[0].received_usdc - 1.25).abs() < 1e-12);
+    assert!((rows[0].paid_usdc + 0.50).abs() < 1e-12);
+    assert_eq!(rows[1].date, "2023-11-15");
 }
