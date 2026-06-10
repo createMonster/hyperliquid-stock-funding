@@ -18,6 +18,17 @@ Or run locally:
 cargo run --release -- --days 30
 ```
 
+## Configuration
+
+Wallet-level funding commands read `HYPERLIQUID_WALLET` from a local `.env` file:
+
+```bash
+cp .env.example .env
+# edit .env and set HYPERLIQUID_WALLET
+```
+
+The `.env` file is ignored by git.
+
 ## Usage
 
 Scan all Hyperliquid stock perps:
@@ -47,9 +58,13 @@ hl-stock-funding oi xyz:AAPL km:TSLA flx:NVDA
 Show daily funding received or paid by a wallet:
 
 ```bash
-cp .env.example .env
-# set HYPERLIQUID_WALLET in .env
 hl-stock-funding wallet-funding --days 30
+```
+
+You can also pass a wallet explicitly:
+
+```bash
+hl-stock-funding wallet-funding --wallet 0x... --days 30
 ```
 
 Example output:
@@ -60,11 +75,19 @@ xyz:AAPL                720        -0.2500%        -3.04%
 km:TSLA                 720         0.1800%         2.19%
 ```
 
+Wallet funding output:
+
+```text
+date           total_usdc     received         paid   events
+2026-06-09        29.5608      31.8081      -2.2472      120
+```
+
 ## Calculation
 
 ```text
 total funding rate = sum(hourly funding rates in the lookback window)
 annualized rate    = total funding rate * 365 / days
+wallet net funding = received funding + paid funding
 ```
 
 ## Interpretation
